@@ -534,9 +534,11 @@ uis.controller('uiSelectCtrl',
           if (containerWidth === 0) {
             return false;
           }
-          var inputWidth = containerWidth - input.offsetLeft;
-          if (inputWidth < 50) inputWidth = containerWidth;
-          ctrl.searchInput.css('width', inputWidth+'px');
+          setTimeout(function(){
+            var inputWidth = containerWidth - input.offsetLeft -10;
+            if (inputWidth < 50) inputWidth = containerWidth;
+            ctrl.searchInput.css('width', inputWidth+'px');
+          }, 0);
           return true;
         };
 
