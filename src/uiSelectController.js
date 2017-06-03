@@ -42,6 +42,10 @@ uis.controller('uiSelectCtrl',
   ctrl.tagging = {isActivated: false, fct: undefined};
   ctrl.taggingTokens = {isActivated: false, tokens: undefined};
   ctrl.lockChoiceExpression = undefined; // Initialized inside uiSelectMatch directive link function
+  ctrl.matchClassExpression = undefined; // Initialized inside uiSelectMatch directive link function
+  ctrl.matchStyleExpression = undefined; // Initialized inside uiSelectMatch directive link function
+  ctrl.choiceClassExpression = undefined; // Initialized inside uiSelectChoices directive link function
+  ctrl.choiceStyleExpression = undefined; // Initialized inside uiSelectChoices directive link function
   ctrl.clickTriggeredSelect = false;
   ctrl.$filter = $filter;
   ctrl.$element = $element;
@@ -518,6 +522,68 @@ uis.controller('uiSelectCtrl',
       return isLocked;
     };
   }
+
+  ctrl.matchClass = function(itemScope, itemIndex, deflt) {
+    deflt = deflt || {};
+    if(!ctrl.matchClassExpression) return deflt;
+    var context = {};
+    if(typeof itemIndex === 'number'){
+      context.$match = {
+        active: itemScope.$selectMultiple.activeMatchIndex == itemIndex,
+        locked: ctrl.isLocked(itemScope, itemIndex),
+      };
+    }
+    var cls = itemScope.$eval(ctrl.matchClassExpression, context);
+    if(typeof cls === 'string'){
+      cls.split(/\s+/).forEach(function(c){
+        deflt[c] = true;
+      });
+    }else if(cls){
+      for(var c in cls) deflt[c] = cls[c];
+    }
+    return deflt;
+  };
+
+  ctrl.matchStyle = function(itemScope, itemIndex) {
+    if(!ctrl.matchStyleExpression) return {};
+    var context = {};
+    if(typeof itemIndex === 'number'){
+      context.$match = {
+        active: itemScope.$selectMultiple.activeMatchIndex == itemIndex,
+        locked: ctrl.isLocked(itemScope, itemIndex),
+      };
+    }
+    return itemScope.$eval(ctrl.matchStyleExpression, context) || {};
+  };
+
+  ctrl.choiceClass = function(itemScope, deflt) {
+    deflt = deflt || {};
+    if(!ctrl.choiceClassExpression) return deflt;
+    var context = {};
+    context.$choice = {
+      active: ctrl.isActive(itemScope),
+      disabled: ctrl.isDisabled(itemScope),
+    };
+    var cls = itemScope.$eval(ctrl.choiceClassExpression, context);
+    if(typeof cls === 'string'){
+      cls.split(/\s+/).forEach(function(c){
+        deflt[c] = true;
+      });
+    }else if(cls){
+      for(var c in cls) deflt[c] = cls[c];
+    }
+    return deflt;
+  };
+
+  ctrl.choiceStyle = function(itemScope) {
+    if(!ctrl.choiceStyleExpression) return {};
+    var context = {};
+    context.$choice = {
+      active: ctrl.isActive(itemScope),
+      disabled: ctrl.isDisabled(itemScope),
+    };
+    return itemScope.$eval(ctrl.choiceStyleExpression, context) || {};
+  };
 
 
   var sizeWatch = null;
