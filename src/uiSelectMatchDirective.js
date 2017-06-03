@@ -17,6 +17,8 @@ uis.directive('uiSelectMatch', ['uiSelectConfig', function(uiSelectConfig) {
     },
     link: function(scope, element, attrs, $select) {
       $select.lockChoiceExpression = attrs.uiLockChoice;
+      $select.matchClassExpression = attrs.uiMatchClass;
+      $select.matchStyleExpression = attrs.uiMatchStyle;
       attrs.$observe('placeholder', function(placeholder) {
         $select.placeholder = placeholder !== undefined ? placeholder : uiSelectConfig.placeholder;
       });
