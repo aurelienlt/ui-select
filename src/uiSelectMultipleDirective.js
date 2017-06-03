@@ -135,10 +135,10 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         };
         if (!inputValue) return resultMultiple; //If ngModel was undefined
         for (var k = inputValue.length - 1; k >= 0; k--) {
-          //Check model array of currently selected items
-          if (!checkFnMultiple($select.selected, inputValue[k])){
-            //Check model array of all items available
-            if (!checkFnMultiple(data, inputValue[k])){
+          //Check model array of all items available
+          if (!checkFnMultiple(data, inputValue[k])){
+            //Check model array of currently selected items
+            if (!checkFnMultiple($select.selected, inputValue[k])){
               //If not found on previous lists, just add it directly to resultMultiple
               resultMultiple.unshift(inputValue[k]);
             }
