@@ -30,6 +30,7 @@ uis.controller('uiSelectCtrl',
   ctrl.items = []; //All available choices
 
   ctrl.open = false;
+  ctrl.closeFromSelect = false;
   ctrl.focus = false;
   ctrl.disabled = false;
   ctrl.selected = undefined;
@@ -146,9 +147,11 @@ uis.controller('uiSelectCtrl',
         };
 
         if (ctrl.items.length > 0) {
-          ctrl.$animate.on('enter', container[0], animateHandler);
+          // ctrl.$animate.on('enter', container[0], animateHandler);
+          animateHandler(container[0], 'close');
         } else {
-          ctrl.$animate.on('removeClass', searchInput[0], animateHandler);
+          // ctrl.$animate.on('removeClass', searchInput[0], animateHandler);
+          animateHandler(searchInput[0], 'start');
         }
       } else {
         $timeout(function () {
@@ -437,16 +440,17 @@ uis.controller('uiSelectCtrl',
         $scope.$broadcast('uis:select', item);
 
         if (ctrl.closeOnSelect) {
-          ctrl.close(skipFocusser);
+          ctrl.close(skipFocusser, true);
         }
       }
     }
   };
 
   // Closes the dropdown
-  ctrl.close = function(skipFocusser) {
+  ctrl.close = function(skipFocusser, closeFromSelect) {
     if (!ctrl.open) return;
     if (ctrl.ngModel && ctrl.ngModel.$setTouched) ctrl.ngModel.$setTouched();
+    if(closeFromSelect) ctrl.closeFromSelect = true;
     ctrl.open = false;
     _resetSearchInput();
     $scope.$broadcast('uis:close', skipFocusser);
