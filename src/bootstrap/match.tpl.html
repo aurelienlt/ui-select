@@ -1,7 +1,7 @@
 <div class="ui-select-match" ng-hide="$select.open && $select.searchEnabled" ng-disabled="$select.disabled" ng-class="{'btn-default-focus':$select.focus}">
   <span tabindex="-1"
-      class="btn btn-default form-control ui-select-toggle"
-      ng-class="$select.matchClass(this)"
+      class="btn form-control ui-select-toggle"
+      ng-class="$select.matchClass(this, null, 'btn-default')"
       ng-style="$select.matchStyle(this)"
       aria-label="{{ $select.baseTitle }} activate"
       ng-disabled="$select.disabled" 
