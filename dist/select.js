@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.19.8 - 2017-06-14T14:40:53.053Z
+ * Version: 0.19.8 - 2017-06-15T10:06:59.901Z
  * License: MIT
  */
 
@@ -729,7 +729,7 @@ uis.controller('uiSelectCtrl',
   ctrl.close = function(skipFocusser, closeFromSelect) {
     if (!ctrl.open) return;
     if (ctrl.ngModel && ctrl.ngModel.$setTouched) ctrl.ngModel.$setTouched();
-    if(closeFromSelect) ctrl.closeFromSelect = true;
+    ctrl.closeFromSelect = closeFromSelect || false;
     ctrl.open = false;
     _resetSearchInput();
     $scope.$broadcast('uis:close', skipFocusser);
@@ -806,9 +806,37 @@ uis.controller('uiSelectCtrl',
     };
   }
 
+  // Inspired from anguar.js arrayClasses
+  // Turns a ng-class style argument into a array of string,
+  // and fill noClass with the classes given in ``{className: false}``
+  function arrayClasses(classVal, noClass) {
+    var classes = [];
+    if (Array.isArray(classVal)) {
+      classVal.forEach(function(v) {
+        classes = classes.concat(arrayClasses(v, noClass));
+      });
+    } else if (typeof classVal === 'string') {
+      return classVal.split(' ');
+    } else if (typeof classVal === 'object') {
+      for(var k in classVal) {
+        if (classVal[k]) {
+          classes = classes.concat(k.split(' '));
+        } else {
+          /*jshint loopfunc: true */
+          k.split(' ').forEach(function(c){
+            noClass[c] = true;
+          });
+        }
+      }
+    }
+    return classes;
+  }
+
+  // Gives the ng-class argument for <ui-select-match>
   ctrl.matchClass = function(itemScope, itemIndex, deflt) {
     deflt = deflt || {};
     if(!ctrl.matchClassExpression) return deflt;
+    // create a context with a $match object (if itemIndex is given)
     var context = {};
     if(typeof itemIndex === 'number'){
       context.$match = {
@@ -816,19 +844,23 @@ uis.controller('uiSelectCtrl',
         locked: ctrl.isLocked(itemScope, itemIndex),
       };
     }
-    var cls = itemScope.$eval(ctrl.matchClassExpression, context);
-    if(typeof cls === 'string'){
-      cls.split(/\s+/).forEach(function(c){
-        deflt[c] = true;
-      });
-    }else if(cls){
-      for(var c in cls) deflt[c] = cls[c];
-    }
-    return deflt;
+    // evaluate ui-match-class attribute
+    var classes = itemScope.$eval(ctrl.matchClassExpression, context) || {};
+    // all this code is used to disable default classes when recieved in ``{className: false}``
+    // if it is overkill, a simple ``return [classes, deflt];`` makes the job
+    if(!deflt) return classes;
+    var noClass = {};
+    classes = arrayClasses(classes, noClass);
+    arrayClasses(deflt, {}).forEach(function(c){
+      if(!noClass[c]) classes.push(c);
+    });
+    return classes;
   };
 
+  // Gives the ng-style argument for <ui-select-match>
   ctrl.matchStyle = function(itemScope, itemIndex) {
     if(!ctrl.matchStyleExpression) return {};
+    // create a context with a $match object (if itemIndex is given)
     var context = {};
     if(typeof itemIndex === 'number'){
       context.$match = {
@@ -836,38 +868,45 @@ uis.controller('uiSelectCtrl',
         locked: ctrl.isLocked(itemScope, itemIndex),
       };
     }
+    // evaluate ui-match-styke attribute
     return itemScope.$eval(ctrl.matchStyleExpression, context) || {};
   };
 
+  // Gives the ng-class argument for <ui-select-choice>
   ctrl.choiceClass = function(itemScope, deflt) {
     deflt = deflt || {};
     if(!ctrl.choiceClassExpression) return deflt;
+    // create a context with a $choice object
     var context = {};
     context.$choice = {
       active: ctrl.isActive(itemScope),
       disabled: ctrl.isDisabled(itemScope),
     };
-    var cls = itemScope.$eval(ctrl.choiceClassExpression, context);
-    if(typeof cls === 'string'){
-      cls.split(/\s+/).forEach(function(c){
-        deflt[c] = true;
-      });
-    }else if(cls){
-      for(var c in cls) deflt[c] = cls[c];
-    }
-    return deflt;
+    // evaluate ui-choice-class attribute
+    var classes = itemScope.$eval(ctrl.choiceClassExpression, context) || {};
+    // all this code is used to disable default classes when recieved in ``{className: false}``
+    // if it is overkill, a simple ``return [classes, deflt];`` makes the job
+    if(!deflt) return classes;
+    var noClass = {};
+    classes = arrayClasses(classes, noClass);
+    arrayClasses(deflt, {}).forEach(function(c){
+      if(!noClass[c]) classes.push(c);
+    });
+    return classes;
   };
 
+  // Gives the ng-style argument for <ui-select-choice>
   ctrl.choiceStyle = function(itemScope) {
     if(!ctrl.choiceStyleExpression) return {};
+    // create a context with a $choice object
     var context = {};
     context.$choice = {
       active: ctrl.isActive(itemScope),
       disabled: ctrl.isDisabled(itemScope),
     };
+    // evaluate ui-choice-style attribute
     return itemScope.$eval(ctrl.choiceStyleExpression, context) || {};
   };
-
 
   var sizeWatch = null;
   var updaterScheduled = false;
@@ -2485,8 +2524,8 @@ uis.service('uisRepeatParser', ['uiSelectMinErr','$parse', function(uiSelectMinE
 
 }());
 angular.module("ui.select").run(["$templateCache", function($templateCache) {$templateCache.put("bootstrap/choices.tpl.html","<ul class=\"ui-select-choices ui-select-choices-content ui-select-dropdown dropdown-menu\" ng-show=\"$select.open && $select.items.length > 0\"><li class=\"ui-select-choices-group\" id=\"ui-select-choices-{{ $select.generatedId }}\"><div class=\"divider\" ng-show=\"$select.isGrouped && $index > 0\"></div><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label dropdown-header\" ng-bind=\"$group.name\"></div><div ng-attr-id=\"ui-select-choices-row-{{ $select.generatedId }}-{{$index}}\" class=\"ui-select-choices-row\" ng-class=\"{active: $select.isActive(this), disabled: $select.isDisabled(this)}\" role=\"option\"><span class=\"ui-select-choices-row-inner\" ng-class=\"$select.choiceClass(this)\" ng-style=\"$select.choiceStyle(this)\"></span></div></li></ul>");
-$templateCache.put("bootstrap/match-multiple.tpl.html","<span class=\"ui-select-match\"><span ng-repeat=\"$item in $select.selected track by $index\"><span class=\"ui-select-match-item btn btn-default btn-xs\" tabindex=\"-1\" type=\"button\" ng-disabled=\"$select.disabled\" ng-click=\"$selectMultiple.activeMatchIndex = $index;\" ng-class=\"$select.matchClass(this, $index, {\'btn-primary\':$selectMultiple.activeMatchIndex === $index, \'select-locked\':$select.isLocked(this, $index)})\" ng-style=\"$select.matchStyle(this, $index)\" ui-select-sort=\"$select.selected\"><span class=\"close ui-select-match-close\" ng-hide=\"$select.disabled\" ng-click=\"$selectMultiple.removeChoice($index)\">&nbsp;&times;</span> <span uis-transclude-append=\"\"></span></span></span></span>");
-$templateCache.put("bootstrap/match.tpl.html","<div class=\"ui-select-match\" ng-hide=\"$select.open && $select.searchEnabled\" ng-disabled=\"$select.disabled\" ng-class=\"{\'btn-default-focus\':$select.focus}\"><span tabindex=\"-1\" class=\"btn btn-default form-control ui-select-toggle\" ng-class=\"$select.matchClass(this)\" ng-style=\"$select.matchStyle(this)\" aria-label=\"{{ $select.baseTitle }} activate\" ng-disabled=\"$select.disabled\" ng-click=\"$select.activate()\" style=\"outline: 0;\"><span ng-show=\"$select.isEmpty()\" class=\"ui-select-placeholder text-muted\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"ui-select-match-text pull-left\" ng-class=\"{\'ui-select-allow-clear\': $select.allowClear && !$select.isEmpty()}\" ng-transclude=\"\"></span> <i class=\"caret pull-right\" ng-click=\"$select.toggle($event)\"></i> <a ng-show=\"$select.allowClear && !$select.isEmpty() && ($select.disabled !== true)\" aria-label=\"{{ $select.baseTitle }} clear\" style=\"margin-right: 10px\" ng-click=\"$select.clear($event)\" class=\"btn btn-xs btn-link pull-right\"><i class=\"glyphicon glyphicon-remove\" aria-hidden=\"true\"></i></a></span></div>");
+$templateCache.put("bootstrap/match-multiple.tpl.html","<span class=\"ui-select-match\"><span ng-repeat=\"$item in $select.selected track by $index\"><span class=\"ui-select-match-item btn\" tabindex=\"-1\" type=\"button\" ng-disabled=\"$select.disabled\" ng-click=\"$selectMultiple.activeMatchIndex = $index;\" ng-class=\"$select.matchClass(this, $index, {\'btn-primary\':$selectMultiple.activeMatchIndex === $index, \'select-locked\':$select.isLocked(this, $index), \'btn-default btn-xs\': true})\" ng-style=\"$select.matchStyle(this, $index)\" ui-select-sort=\"$select.selected\"><span class=\"close ui-select-match-close\" ng-hide=\"$select.disabled\" ng-click=\"$selectMultiple.removeChoice($index)\">&nbsp;&times;</span> <span uis-transclude-append=\"\"></span></span></span></span>");
+$templateCache.put("bootstrap/match.tpl.html","<div class=\"ui-select-match\" ng-hide=\"$select.open && $select.searchEnabled\" ng-disabled=\"$select.disabled\" ng-class=\"{\'btn-default-focus\':$select.focus}\"><span tabindex=\"-1\" class=\"btn form-control ui-select-toggle\" ng-class=\"$select.matchClass(this, null, \'btn-default\')\" ng-style=\"$select.matchStyle(this)\" aria-label=\"{{ $select.baseTitle }} activate\" ng-disabled=\"$select.disabled\" ng-click=\"$select.activate()\" style=\"outline: 0;\"><span ng-show=\"$select.isEmpty()\" class=\"ui-select-placeholder text-muted\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"ui-select-match-text pull-left\" ng-class=\"{\'ui-select-allow-clear\': $select.allowClear && !$select.isEmpty()}\" ng-transclude=\"\"></span> <i class=\"caret pull-right\" ng-click=\"$select.toggle($event)\"></i> <a ng-show=\"$select.allowClear && !$select.isEmpty() && ($select.disabled !== true)\" aria-label=\"{{ $select.baseTitle }} clear\" style=\"margin-right: 10px\" ng-click=\"$select.clear($event)\" class=\"btn btn-xs btn-link pull-right\"><i class=\"glyphicon glyphicon-remove\" aria-hidden=\"true\"></i></a></span></div>");
 $templateCache.put("bootstrap/no-choice.tpl.html","<ul class=\"ui-select-no-choice dropdown-menu\" ng-show=\"$select.items.length == 0\"><li ng-transclude=\"\"></li></ul>");
 $templateCache.put("bootstrap/select-multiple.tpl.html","<div class=\"ui-select-container ui-select-multiple ui-select-bootstrap dropdown form-control\" ng-class=\"{open: $select.open}\"><div><div class=\"ui-select-match\"></div><span ng-show=\"$select.open && $select.refreshing && $select.spinnerEnabled\" class=\"ui-select-refreshing {{$select.spinnerClass}}\"></span> <input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" class=\"ui-select-search input-xs\" placeholder=\"{{$selectMultiple.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-click=\"$select.activate()\" ng-model=\"$select.search\" role=\"combobox\" aria-expanded=\"{{$select.open}}\" aria-label=\"{{$select.baseTitle}}\" ng-class=\"{\'spinner\': $select.refreshing}\" ondrop=\"return false;\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
 $templateCache.put("bootstrap/select.tpl.html","<div class=\"ui-select-container ui-select-bootstrap dropdown\" ng-class=\"{open: $select.open}\"><div class=\"ui-select-match\"></div><span ng-show=\"$select.open && $select.refreshing && $select.spinnerEnabled\" class=\"ui-select-refreshing {{$select.spinnerClass}}\"></span> <input type=\"search\" autocomplete=\"off\" tabindex=\"-1\" aria-expanded=\"true\" aria-label=\"{{ $select.baseTitle }}\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" class=\"form-control ui-select-search\" ng-class=\"{ \'ui-select-search-hidden\' : !$select.searchEnabled }\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-show=\"$select.open\"><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
