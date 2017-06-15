@@ -523,9 +523,37 @@ uis.controller('uiSelectCtrl',
     };
   }
 
+  // Inspired from anguar.js arrayClasses
+  // Turns a ng-class style argument into a array of string,
+  // and fill noClass with the classes given in ``{className: false}``
+  function arrayClasses(classVal, noClass) {
+    var classes = [];
+    if (Array.isArray(classVal)) {
+      classVal.forEach(function(v) {
+        classes = classes.concat(arrayClasses(v, noClass));
+      });
+    } else if (typeof classVal === 'string') {
+      return classVal.split(' ');
+    } else if (typeof classVal === 'object') {
+      for(var k in classVal) {
+        if (classVal[k]) {
+          classes = classes.concat(k.split(' '));
+        } else {
+          /*jshint loopfunc: true */
+          k.split(' ').forEach(function(c){
+            noClass[c] = true;
+          });
+        }
+      }
+    }
+    return classes;
+  }
+
+  // Gives the ng-class argument for <ui-select-match>
   ctrl.matchClass = function(itemScope, itemIndex, deflt) {
     deflt = deflt || {};
     if(!ctrl.matchClassExpression) return deflt;
+    // create a context with a $match object (if itemIndex is given)
     var context = {};
     if(typeof itemIndex === 'number'){
       context.$match = {
@@ -533,19 +561,23 @@ uis.controller('uiSelectCtrl',
         locked: ctrl.isLocked(itemScope, itemIndex),
       };
     }
-    var cls = itemScope.$eval(ctrl.matchClassExpression, context);
-    if(typeof cls === 'string'){
-      cls.split(/\s+/).forEach(function(c){
-        deflt[c] = true;
-      });
-    }else if(cls){
-      for(var c in cls) deflt[c] = cls[c];
-    }
-    return deflt;
+    // evaluate ui-match-class attribute
+    var classes = itemScope.$eval(ctrl.matchClassExpression, context) || {};
+    // all this code is used to disable default classes when recieved in ``{className: false}``
+    // if it is overkill, a simple ``return [classes, deflt];`` makes the job
+    if(!deflt) return classes;
+    var noClass = {};
+    classes = arrayClasses(classes, noClass);
+    arrayClasses(deflt, {}).forEach(function(c){
+      if(!noClass[c]) classes.push(c);
+    });
+    return classes;
   };
 
+  // Gives the ng-style argument for <ui-select-match>
   ctrl.matchStyle = function(itemScope, itemIndex) {
     if(!ctrl.matchStyleExpression) return {};
+    // create a context with a $match object (if itemIndex is given)
     var context = {};
     if(typeof itemIndex === 'number'){
       context.$match = {
@@ -553,38 +585,45 @@ uis.controller('uiSelectCtrl',
         locked: ctrl.isLocked(itemScope, itemIndex),
       };
     }
+    // evaluate ui-match-styke attribute
     return itemScope.$eval(ctrl.matchStyleExpression, context) || {};
   };
 
+  // Gives the ng-class argument for <ui-select-choice>
   ctrl.choiceClass = function(itemScope, deflt) {
     deflt = deflt || {};
     if(!ctrl.choiceClassExpression) return deflt;
+    // create a context with a $choice object
     var context = {};
     context.$choice = {
       active: ctrl.isActive(itemScope),
       disabled: ctrl.isDisabled(itemScope),
     };
-    var cls = itemScope.$eval(ctrl.choiceClassExpression, context);
-    if(typeof cls === 'string'){
-      cls.split(/\s+/).forEach(function(c){
-        deflt[c] = true;
-      });
-    }else if(cls){
-      for(var c in cls) deflt[c] = cls[c];
-    }
-    return deflt;
+    // evaluate ui-choice-class attribute
+    var classes = itemScope.$eval(ctrl.choiceClassExpression, context) || {};
+    // all this code is used to disable default classes when recieved in ``{className: false}``
+    // if it is overkill, a simple ``return [classes, deflt];`` makes the job
+    if(!deflt) return classes;
+    var noClass = {};
+    classes = arrayClasses(classes, noClass);
+    arrayClasses(deflt, {}).forEach(function(c){
+      if(!noClass[c]) classes.push(c);
+    });
+    return classes;
   };
 
+  // Gives the ng-style argument for <ui-select-choice>
   ctrl.choiceStyle = function(itemScope) {
     if(!ctrl.choiceStyleExpression) return {};
+    // create a context with a $choice object
     var context = {};
     context.$choice = {
       active: ctrl.isActive(itemScope),
       disabled: ctrl.isDisabled(itemScope),
     };
+    // evaluate ui-choice-style attribute
     return itemScope.$eval(ctrl.choiceStyleExpression, context) || {};
   };
-
 
   var sizeWatch = null;
   var updaterScheduled = false;
