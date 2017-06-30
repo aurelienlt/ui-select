@@ -643,11 +643,9 @@ uis.controller('uiSelectCtrl',
           if (containerWidth === 0) {
             return false;
           }
-          setTimeout(function(){
-            var inputWidth = containerWidth - input.offsetLeft -10;
-            if (inputWidth < 50) inputWidth = containerWidth;
-            ctrl.searchInput.css('width', inputWidth+'px');
-          }, 0);
+          var inputWidth = containerWidth - input.offsetLeft - (ctrl.multiple ? 10 : 0);
+          if (inputWidth < 50) inputWidth = containerWidth;
+          ctrl.searchInput.css('width', inputWidth+'px');
           return true;
         };
 
