@@ -303,10 +303,12 @@ uis.controller('uiSelectCtrl',
       if (_refreshDelayPromise) {
         $timeout.cancel(_refreshDelayPromise);
       }
+      ctrl.refreshing = true;
       _refreshDelayPromise = $timeout(function() {
+        ctrl.refreshing = false;
         if ($scope.$select.search.length >= $scope.$select.minimumInputLength) {
           var refreshPromise = $scope.$eval(refreshAttr);
-          if (refreshPromise && angular.isFunction(refreshPromise.then) && !ctrl.refreshing) {
+          if (refreshPromise && angular.isFunction(refreshPromise.then)) {
             ctrl.refreshing = true;
             refreshPromise.finally(function() {
               ctrl.refreshing = false;
