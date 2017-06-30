@@ -2033,7 +2033,7 @@ describe('ui-select tests', function () {
 
       var newWidth = searchInput[0].clientWidth + searchInput[0].offsetLeft;
       var containerWidth = el[0].clientWidth;
-      expect(containerWidth - newWidth).toBeLessThan(10);
+      expect(containerWidth - newWidth).toBeLessThan(20);
 
     });
     it('should move to last match when pressing BACKSPACE key from search', function () {
