@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.19.8 - 2017-06-30T15:50:41.387Z
+ * Version: 0.19.8 - 2017-07-05T15:49:22.850Z
  * License: MIT
  */
 
@@ -313,6 +313,8 @@ uis.controller('uiSelectCtrl',
   ctrl.focus = false;
   ctrl.disabled = false;
   ctrl.selected = undefined;
+  ctrl.resolved = undefined; //True if the selected value has been resolved against the choices
+  ctrl.nextResolved = undefined; //The value of resolved at the next $render call
 
   ctrl.dropdownPosition = 'auto';
 
@@ -1632,8 +1634,10 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           $select = $scope.$select,
           ngModel;
 
-      if (angular.isUndefined($select.selected))
+      if (angular.isUndefined($select.selected)){
         $select.selected = [];
+        $select.resolved = [];
+      }
 
       //Wait for link fn to inject it
       $scope.$evalAsync(function(){ ngModel = $scope.ngModel; });
@@ -1669,6 +1673,7 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         locals[$select.parserResult.itemName] = removedChoice;
 
         $select.selected.splice(index, 1);
+        $select.resolved.splice(index, 1);
         ctrl.activeMatchIndex = -1;
         $select.sizeSearchInput();
 
@@ -1732,40 +1737,75 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
             locals = {},
             result;
-        if (!data) return inputValue;
-        var resultMultiple = [];
-        var checkFnMultiple = function(list, value){
-          if (!list || !list.length) return;
-          for (var p = list.length - 1; p >= 0; p--) {
-            locals[$select.parserResult.itemName] = list[p];
-            result = $select.parserResult.modelMapper(scope, locals);
-            if($select.parserResult.trackByExp){
-                var propsItemNameMatches = /(\w*)\./.exec($select.parserResult.trackByExp);
-                var matches = /\.([^\s]+)/.exec($select.parserResult.trackByExp);
-                if(propsItemNameMatches && propsItemNameMatches.length > 0 && propsItemNameMatches[1] == $select.parserResult.itemName){
-                  if(matches && matches.length>0 && result[matches[1]] == value[matches[1]]){
-                      resultMultiple.unshift(list[p]);
-                      return true;
-                  }
-                }
-            }
-            if (angular.equals(result,value)){
-              resultMultiple.unshift(list[p]);
-              return true;
+        var resultMultiple = [], resolved = [];
+        $select.nextResolved = resolved; // resolved for the next $render call
+        setTimeout(function(){
+          $select.nextResolved = undefined;
+        });
+        if (!inputValue) return resultMultiple; //If ngModel was undefined
+        // compute the keys of an item, to match against the value
+        var keyOfItem = function(item){
+          locals[$select.parserResult.itemName] = item;
+          return {
+            item: item,
+            model: $select.parserResult.modelMapper(scope, locals),
+            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+          };
+        };
+        // compare the keys of the value and the item
+        var valueMatchItem = function(value, item){
+          // check the following cases:
+          // * value is equals to item (formatted as a choice)
+          // * value is equals to item (formatted as a model)
+          // * the "track by" ids of value (formatted as a choice) and item are the same
+          // * the "track by" ids of value (formatted as a model) and item are the same
+          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+          if($select.parserResult.trackByMapper){
+            if(value.trackBy === item.trackBy) return true;
+            if($select.parserResult.modelToTrackByMapper){
+              if(value.modelTotrackBy === item.trackBy) return true;
             }
           }
           return false;
         };
-        if (!inputValue) return resultMultiple; //If ngModel was undefined
-        for (var k = inputValue.length - 1; k >= 0; k--) {
-          //Check model array of all items available
-          if (!checkFnMultiple(data, inputValue[k])){
-            //Check model array of currently selected items
-            if (!checkFnMultiple($select.selected, inputValue[k])){
-              //If not found on previous lists, just add it directly to resultMultiple
-              resultMultiple.unshift(inputValue[k]);
+        // the list of resolved selected items with their keys
+        var selected = $select.selected.filter(function(item, index){
+          return $select.resolved[index];
+        }).map(keyOfItem);
+        // the list of choices with their keys, computed at the last moment
+        var search = data ? null : [];
+        for (var k = 0, i; k < inputValue.length; k++) {
+          // the keys of the value, to match against the items
+          locals[$select.parserResult.itemName] = inputValue[k];
+          var value = {
+            model: inputValue[k],
+            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+            modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
+          };
+          //Check model array of currently selected items
+          for(i = selected.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, selected[i])){
+              resultMultiple.push(selected[i].item);
+              resolved.push(true);
+              value = null;
+              break;
             }
           }
+          if(!value) continue;
+          //Check model array of all items available
+          if(!search) search = data.map(keyOfItem);
+          for(i = search.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, search[i])){
+              resultMultiple.push(search[i].item);
+              resolved.push(true);
+              value = null;
+              break;
+            }
+          }
+          if(!value) continue;
+          //If not found on previous lists, just add it directly to resultMultiple
+          resultMultiple.push(inputValue[k]);
+          resolved.push(false);
         }
         return resultMultiple;
       });
@@ -1792,6 +1832,13 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           }
         }
         $select.selected = ngModel.$viewValue;
+        if($select.nextResolved){
+          $select.resolved = $select.nextResolved;
+          $select.nextResolved = undefined;
+        }else{
+          $select.resolved = [];
+          $select.resolved.length = ngModel.$viewValue.length;
+        }
         $selectMultiple.refreshComponent();
         scope.$evalAsync(); //To force $digest
       };
@@ -1801,6 +1848,7 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           return;
         }
         $select.selected.push(item);
+        $select.resolved.push(true);
         var locals = {};
         locals[$select.parserResult.itemName] = item;
 
@@ -2125,26 +2173,61 @@ uis.directive('uiSelectSingle', ['$timeout','$compile', function($timeout, $comp
 
       //From model --> view
       ngModel.$formatters.unshift(function (inputValue) {
+        $select.nextResolved = false; // resolved for the next $render call
+        setTimeout(function(){
+          $select.nextResolved = undefined;
+        });
         // Keep original value for undefined and null
         if (isNil(inputValue)) {
           return inputValue;
         }
 
         var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
-            locals = {},
-            result;
-        if (data){
-          var checkFnSingle = function(d){
-            locals[$select.parserResult.itemName] = d;
-            result = $select.parserResult.modelMapper(scope, locals);
-            return result === inputValue;
+            locals = {};
+        // compute the keys of an item, to match against the value
+        var keyOfItem = function(item){
+          locals[$select.parserResult.itemName] = item;
+          return {
+            item: item,
+            model: $select.parserResult.modelMapper(scope, locals),
+            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
           };
-          //If possible pass same object stored in $select.selected
-          if ($select.selected && checkFnSingle($select.selected)) {
-            return $select.selected;
+        };
+        // compare the keys of the value and the item
+        var valueMatchItem = function(value, item){
+          // check the following cases:
+          // * value is equals to item (formatted as a choice)
+          // * value is equals to item (formatted as a model)
+          // * the "track by" ids of value (formatted as a choice) and item are the same
+          // * the "track by" ids of value (formatted as a model) and item are the same
+          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+          if($select.parserResult.trackByMapper){
+            if(value.trackBy === item.trackBy) return true;
+            if($select.parserResult.modelToTrackByMapper){
+              if(value.modelTotrackBy === item.trackBy) return true;
+            }
           }
-          for (var i = data.length - 1; i >= 0; i--) {
-            if (checkFnSingle(data[i])) return data[i];
+          return false;
+        };
+        locals[$select.parserResult.itemName] = inputValue;
+        // the keys of the value, to match against the items
+        var value = {
+          model: inputValue,
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+          modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
+        };
+        //If possible pass same object stored in $select.selected
+        if($select.selected && $select.resolved && valueMatchItem(value, keyOfItem($select.selected))){
+          $select.nextResolved = true;
+          return $select.selected;
+        }
+        //Check model array of all items available
+        if(data){
+          for(var i = data.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, keyOfItem(data[i]))){
+              $select.nextResolved = true;
+              return data[i];
+            }
           }
         }
         return inputValue;
@@ -2159,10 +2242,13 @@ uis.directive('uiSelectSingle', ['$timeout','$compile', function($timeout, $comp
 
       ngModel.$render = function() {
         $select.selected = ngModel.$viewValue;
+        $select.resolved = $select.nextResolved || false;
+        $select.nextResolved = undefined;
       };
 
       scope.$on('uis:select', function (event, item) {
         $select.selected = item;
+        $select.resolved = true;
         var locals = {};
         locals[$select.parserResult.itemName] = item;
 
@@ -2498,13 +2584,34 @@ uis.service('uisRepeatParser', ['uiSelectMinErr','$parse', function(uiSelectMinE
       }      
     }
 
+    // Try to compute modelToTrackByMapper, such that 
+    // modelToTrackByMapper on modelMapper is equivalent to trackByMapper
+    // It makes sense when match[1] is a prefix of match[6]
+    var itemName = match[4] || match[2],
+        modelToTrackByMapper;
+    if(!match[1] || !match[6]){
+      modelToTrackByMapper = null;
+    }else if(match[1] === match[6]){
+      modelToTrackByMapper = $parse(itemName);
+    }else if(match[6].substring(0, match[1].length + 1) === match[1] + '.'){
+      try{
+        modelToTrackByMapper = $parse(itemName + '.' + match[6].substring(match[1].length + 1));
+      }catch(e){
+        modelToTrackByMapper = null;
+      }
+    }else{
+      modelToTrackByMapper = null;
+    }
+
     return {
-      itemName: match[4] || match[2], // (lhs) Left-hand side,
+      itemName: itemName, // (lhs) Left-hand side,
       keyName: match[3], //for (key, value) syntax
       source: $parse(source),
       filters: filters,
       trackByExp: match[6],
-      modelMapper: $parse(match[1] || match[4] || match[2]),
+      trackByMapper: match[6] && $parse(match[6]),
+      modelToTrackByMapper: modelToTrackByMapper,
+      modelMapper: $parse(match[1] || itemName),
       repeatExpression: function (grouped) {
         var expression = this.itemName + ' in ' + (grouped ? '$group.items' : '$select.items');
         if (this.trackByExp) {
