@@ -33,6 +33,8 @@ uis.controller('uiSelectCtrl',
   ctrl.focus = false;
   ctrl.disabled = false;
   ctrl.selected = undefined;
+  ctrl.resolved = undefined; //True if the selected value has been resolved against the choices
+  ctrl.nextResolved = undefined; //The value of resolved at the next $render call
 
   ctrl.dropdownPosition = 'auto';
 
