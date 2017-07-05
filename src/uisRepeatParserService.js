@@ -58,13 +58,34 @@ uis.service('uisRepeatParser', ['uiSelectMinErr','$parse', function(uiSelectMinE
       }      
     }
 
+    // Try to compute modelToTrackByMapper, such that 
+    // modelToTrackByMapper on modelMapper is equivalent to trackByMapper
+    // It makes sense when match[1] is a prefix of match[6]
+    var itemName = match[4] || match[2],
+        modelToTrackByMapper;
+    if(!match[1] || !match[6]){
+      modelToTrackByMapper = null;
+    }else if(match[1] === match[6]){
+      modelToTrackByMapper = $parse(itemName);
+    }else if(match[6].substring(0, match[1].length + 1) === match[1] + '.'){
+      try{
+        modelToTrackByMapper = $parse(itemName + '.' + match[6].substring(match[1].length + 1));
+      }catch(e){
+        modelToTrackByMapper = null;
+      }
+    }else{
+      modelToTrackByMapper = null;
+    }
+
     return {
-      itemName: match[4] || match[2], // (lhs) Left-hand side,
+      itemName: itemName, // (lhs) Left-hand side,
       keyName: match[3], //for (key, value) syntax
       source: $parse(source),
       filters: filters,
       trackByExp: match[6],
-      modelMapper: $parse(match[1] || match[4] || match[2]),
+      trackByMapper: match[6] && $parse(match[6]),
+      modelToTrackByMapper: modelToTrackByMapper,
+      modelMapper: $parse(match[1] || itemName),
       repeatExpression: function (grouped) {
         var expression = this.itemName + ' in ' + (grouped ? '$group.items' : '$select.items');
         if (this.trackByExp) {

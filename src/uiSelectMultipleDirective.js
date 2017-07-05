@@ -9,8 +9,10 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           $select = $scope.$select,
           ngModel;
 
-      if (angular.isUndefined($select.selected))
+      if (angular.isUndefined($select.selected)){
         $select.selected = [];
+        $select.resolved = [];
+      }
 
       //Wait for link fn to inject it
       $scope.$evalAsync(function(){ ngModel = $scope.ngModel; });
@@ -46,6 +48,7 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         locals[$select.parserResult.itemName] = removedChoice;
 
         $select.selected.splice(index, 1);
+        $select.resolved.splice(index, 1);
         ctrl.activeMatchIndex = -1;
         $select.sizeSearchInput();
 
@@ -109,40 +112,75 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
             locals = {},
             result;
-        if (!data) return inputValue;
-        var resultMultiple = [];
-        var checkFnMultiple = function(list, value){
-          if (!list || !list.length) return;
-          for (var p = list.length - 1; p >= 0; p--) {
-            locals[$select.parserResult.itemName] = list[p];
-            result = $select.parserResult.modelMapper(scope, locals);
-            if($select.parserResult.trackByExp){
-                var propsItemNameMatches = /(\w*)\./.exec($select.parserResult.trackByExp);
-                var matches = /\.([^\s]+)/.exec($select.parserResult.trackByExp);
-                if(propsItemNameMatches && propsItemNameMatches.length > 0 && propsItemNameMatches[1] == $select.parserResult.itemName){
-                  if(matches && matches.length>0 && result[matches[1]] == value[matches[1]]){
-                      resultMultiple.unshift(list[p]);
-                      return true;
-                  }
-                }
-            }
-            if (angular.equals(result,value)){
-              resultMultiple.unshift(list[p]);
-              return true;
+        var resultMultiple = [], resolved = [];
+        $select.nextResolved = resolved; // resolved for the next $render call
+        setTimeout(function(){
+          $select.nextResolved = undefined;
+        });
+        if (!inputValue) return resultMultiple; //If ngModel was undefined
+        // compute the keys of an item, to match against the value
+        var keyOfItem = function(item){
+          locals[$select.parserResult.itemName] = item;
+          return {
+            item: item,
+            model: $select.parserResult.modelMapper(scope, locals),
+            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+          };
+        };
+        // compare the keys of the value and the item
+        var valueMatchItem = function(value, item){
+          // check the following cases:
+          // * value is equals to item (formatted as a choice)
+          // * value is equals to item (formatted as a model)
+          // * the "track by" ids of value (formatted as a choice) and item are the same
+          // * the "track by" ids of value (formatted as a model) and item are the same
+          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+          if($select.parserResult.trackByMapper){
+            if(value.trackBy === item.trackBy) return true;
+            if($select.parserResult.modelToTrackByMapper){
+              if(value.modelTotrackBy === item.trackBy) return true;
             }
           }
           return false;
         };
-        if (!inputValue) return resultMultiple; //If ngModel was undefined
-        for (var k = inputValue.length - 1; k >= 0; k--) {
-          //Check model array of all items available
-          if (!checkFnMultiple(data, inputValue[k])){
-            //Check model array of currently selected items
-            if (!checkFnMultiple($select.selected, inputValue[k])){
-              //If not found on previous lists, just add it directly to resultMultiple
-              resultMultiple.unshift(inputValue[k]);
+        // the list of resolved selected items with their keys
+        var selected = $select.selected.filter(function(item, index){
+          return $select.resolved[index];
+        }).map(keyOfItem);
+        // the list of choices with their keys, computed at the last moment
+        var search = data ? null : [];
+        for (var k = 0, i; k < inputValue.length; k++) {
+          // the keys of the value, to match against the items
+          locals[$select.parserResult.itemName] = inputValue[k];
+          var value = {
+            model: inputValue[k],
+            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+            modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
+          };
+          //Check model array of currently selected items
+          for(i = selected.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, selected[i])){
+              resultMultiple.push(selected[i].item);
+              resolved.push(true);
+              value = null;
+              break;
             }
           }
+          if(!value) continue;
+          //Check model array of all items available
+          if(!search) search = data.map(keyOfItem);
+          for(i = search.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, search[i])){
+              resultMultiple.push(search[i].item);
+              resolved.push(true);
+              value = null;
+              break;
+            }
+          }
+          if(!value) continue;
+          //If not found on previous lists, just add it directly to resultMultiple
+          resultMultiple.push(inputValue[k]);
+          resolved.push(false);
         }
         return resultMultiple;
       });
@@ -169,6 +207,13 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           }
         }
         $select.selected = ngModel.$viewValue;
+        if($select.nextResolved){
+          $select.resolved = $select.nextResolved;
+          $select.nextResolved = undefined;
+        }else{
+          $select.resolved = [];
+          $select.resolved.length = ngModel.$viewValue.length;
+        }
         $selectMultiple.refreshComponent();
         scope.$evalAsync(); //To force $digest
       };
@@ -178,6 +223,7 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           return;
         }
         $select.selected.push(item);
+        $select.resolved.push(true);
         var locals = {};
         locals[$select.parserResult.itemName] = item;
 
