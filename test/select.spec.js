@@ -3444,4 +3444,437 @@ describe('ui-select tests', function () {
       expect(el.scope().$select.activeIndex).toBe(2);
     });
   });
+
+  describe('Test generation of matching keys for model resolving', function () {
+    it('should ignore absence of "track by" expression', function () {
+      var parserResult = uisRepeatParser.parse("choice.value as choice in list");
+      expect(parserResult.trackByMapper).toBe(null);
+      expect(parserResult.modelToTrackByMapper).toBe(null);
+    });
+
+    it('should ignore a use of $index in the "track by" expression', function () {
+      var parserResult = uisRepeatParser.parse("choice.value as choice in list track by $index * 2");
+      expect(parserResult.trackByMapper).toBe(null);
+      expect(parserResult.modelToTrackByMapper).toBe(null);
+    });
+
+    it('should parse a complex "track by" expression', function () {
+      var parserResult = uisRepeatParser.parse("choice in list track by 2 * choice.index + 1");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {choice: {index: 123}})).toBe(247);
+      expect(parserResult.modelToTrackByMapper).toBe(null);
+    });
+
+    it('should ignore a non compatible "as" expression', function () {
+      var parserResult = uisRepeatParser.parse("choice.name as choice in list track by 2*choice.index+1");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {choice: {index: 123}})).toBe(247);
+      expect(parserResult.modelToTrackByMapper).toBe(null);
+    });
+
+    it('should ignore occurences with longer variable name', function () {
+      var parserResult = uisRepeatParser.parse("choice.ind as choice in list track by choice.index");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {choice: {index: 123}})).toBe(123);
+      expect(parserResult.modelToTrackByMapper).toBe(null);
+    });
+
+    it('should parse identical "as" and "track by" expression', function () {
+      var parserResult = uisRepeatParser.parse("choice.value.index as choice in list track by choice.value.index");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {
+        choice: {value: {index: '123'}}
+      })).toBe('123');
+      expect(parserResult.modelToTrackByMapper).not.toBe(null);
+      expect(parserResult.modelToTrackByMapper(scope, {
+        choice: parserResult.modelMapper(scope, {
+          choice: {value: {index: '123'}},
+        }),
+      })).toBe('123');
+    });
+
+    it('should replace "as" expression in "track by" expression by itemName', function(){
+      var parserResult = uisRepeatParser.parse("choice.value.index as choice in list track by Math.pow(choice.value.index, 2) - Math.ceil(1+choice.value.index/2)");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {
+        choice: {value: {index: 123}}, 
+        Math: Math, 
+      })).toBe(Math.pow(123, 2) - Math.ceil(1+123/2));
+      expect(parserResult.modelToTrackByMapper).not.toBe(null);
+      expect(parserResult.modelToTrackByMapper(scope, {
+        choice: parserResult.modelMapper(scope, {
+          choice: {value: {index: 123}},
+        }), 
+        Math: Math, 
+      })).toBe(Math.pow(123, 2) - Math.ceil(1+123/2));
+    });
+
+    it('should replace complex "as" expression in itemName', function () {
+      var parserResult = uisRepeatParser.parse("Math.floor(2+Math.sqrt(choice)) as choice in list track by 6*Math.floor(2+Math.sqrt(choice))-2");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {
+        choice: 123, 
+        Math: Math, 
+      })).toBe(6*Math.floor(2+Math.sqrt(123))-2);
+      expect(parserResult.modelToTrackByMapper).not.toBe(null);
+      expect(parserResult.modelToTrackByMapper(scope, {
+        choice: parserResult.modelMapper(scope, {
+          choice: 123,
+          Math: Math,
+        }), 
+        Math: Math, 
+      })).toBe(6*Math.floor(2+Math.sqrt(123))-2);
+    });
+
+    it('should ignore occurences which are not variables', function () {
+      var parserResult = uisRepeatParser.parse("choice.index as choice in list track by (truc.$index || truc.choice.index || $choice.index || 'choice.index' != 'choice' && \"choice.index\" != \"choice\" && 's\\'choice.index\\'s' != 's\\'choice\\'s' && choice.index.toUpperCase() + choice.index || 'wrong')");
+      expect(parserResult.trackByMapper).not.toBe(null);
+      expect(parserResult.trackByMapper(scope, {choice: {index: 'right'}})).toBe('RIGHTright');
+      expect(parserResult.modelToTrackByMapper).not.toBe(null);
+      expect(parserResult.modelToTrackByMapper(scope, {
+        choice: parserResult.modelMapper(scope, {choice: {index: 'right'}}),
+        truc: {choice: 'wrong'},
+        $choice: 'wrong',
+      })).toBe('RIGHTright');
+    });
+  });
+
+  describe('Resolving model over choices', function () {
+    it('should match model with choices from equality in single case', function(){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in people"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = angular.copy(scope.people[3]);
+      expect(scope.selection.selected).not.toBe(scope.people[3]);
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should match model with choices from equality in multiple case', function(){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in people"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = [angular.copy(scope.people[2]), angular.copy(scope.people[4])]
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+    it('should match model with choices from "track by" equality in single case', function(){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in people track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = {email: scope.people[3].email};
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should match model with choices from "track by" equality in multiple case', function(){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in people track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = [
+        {email: scope.people[2].email}, 
+        {email: scope.people[4].email},
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+
+    it('should work when "as" expression and "track by" exressions are same in single case', function(){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person.email as person in people track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = scope.people[3].email;
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should work when "as" expression and "track by" exressions are same in multiple case', function(){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person.email as person in people track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = [
+        scope.people[2].email, 
+        scope.people[4].email,
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+    it('should match model with choices from model equality in single case', function(){
+      scope.peopleDeep = scope.people.map(function(person){
+        return {deep: {person: person}};
+      });
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.deep.person.name}}</ui-select-match> \
+          <ui-select-choices repeat="item.deep.person as item in peopleDeep"> \
+            <div ng-bind-html="item.deep.person.name"></div> \
+            <div ng-bind-html="item.deep.person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = angular.copy(scope.people[3]);
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.peopleDeep[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should match model with choices from model equality in multiple case', function(){
+      scope.peopleDeep = scope.people.map(function(person){
+        return {deep: {person: person}};
+      });
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.deep.person.name}}</ui-select-match> \
+          <ui-select-choices repeat="item.deep.person as item in peopleDeep"> \
+            <div ng-bind-html="item.deep.person.name"></div> \
+            <div ng-bind-html="item.deep.person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = [
+        angular.copy(scope.people[2]),
+        angular.copy(scope.people[4]),
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.peopleDeep[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.peopleDeep[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+    it('should match model with choices from model "track by" equality in single case', function(){
+      scope.peopleDeep = scope.people.map(function(person){
+        return {deep: {person: person}};
+      });
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.deep.person.name}}</ui-select-match> \
+          <ui-select-choices repeat="item.deep as item in peopleDeep track by item.deep.person.email"> \
+            <div ng-bind-html="item.deep.person.name"></div> \
+            <div ng-bind-html="item.deep.person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = {deep: {person: {email: scope.people[3].email}}};
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.peopleDeep[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should match model with choices from model "track by" equality in multiple case', function(){
+      scope.peopleDeep = scope.people.map(function(person){
+        return {deep: {person: person}};
+      });
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.deep.person.name}}</ui-select-match> \
+          <ui-select-choices repeat="item.deep as item in peopleDeep track by item.deep.person.email"> \
+            <div ng-bind-html="item.deep.person.name"></div> \
+            <div ng-bind-html="item.deep.person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+      scope.selection.selected = [
+        {deep: {person: {email: scope.people[2].email}}}, 
+        {deep: {person: {email: scope.people[4].email}}},
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.peopleDeep[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.peopleDeep[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+    it('should keep the selected item in signle case', function(){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.peopleCopy = scope.people;
+      scope.selection.selected = {email: scope.people[3].email, first: true};
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      scope.selection.selected = {email: scope.people[3].email, first: false};
+      scope.peopleCopy = angular.copy(scope.people);
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[3]);
+      expect(el.scope().$select.selected).not.toBe(scope.peopleCopy[3]);
+      expect(el.scope().$select.resolved).toBe(true);
+    });
+
+    it('should keep the selected item in multiple case', function(){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.peopleCopy = scope.people;
+      scope.selection.selected = [
+        {email: scope.people[2].email, first: true}, 
+        {email: scope.people[4].email, first: true},
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+
+      scope.selection.selected = [
+        {email: scope.people[1].email, first: false}, 
+        {email: scope.people[4].email, first: false},
+      ];
+      scope.peopleCopy = angular.copy(scope.people);
+      scope.$digest();
+      expect(el.scope().$select.selected[0]).toBe(scope.peopleCopy[1]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+    });
+
+    it('it should match with asynchronous search in signle case', function(done){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email" \
+              refresh="searchPeople()" refresh-delay="0"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.searchPeople = function(){
+        var defer = $q.defer();
+        setTimeout(function(){
+          scope.peopleCopy = scope.people;
+          defer.resolve();
+          scope.$digest();
+          expect(el.scope().$select.selected).toBe(scope.people[3]);
+          expect(el.scope().$select.resolved).toBe(true);
+          done();
+        });
+        return defer.promise;
+      };
+
+      scope.peopleCopy = [];
+      var selected = {email: scope.people[3].email, first: true};
+      scope.selection.selected = selected;
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(selected);
+      expect(el.scope().$select.resolved).toBe(false);
+      $timeout.flush();
+    });
+
+    it('it should match with asynchronous search in multiple case', function(done){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email" \
+              refresh="searchPeople()" refresh-delay="0"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.searchPeople = function(){
+        var defer = $q.defer();
+        setTimeout(function(){
+          scope.peopleCopy = scope.people;
+          selected[0] = {email: scope.people[1].email};
+          defer.resolve();
+          scope.$digest();
+          expect(el.scope().$select.selected[0]).toBe(scope.people[1]);
+          expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+          expect(el.scope().$select.resolved[0]).toBe(true);
+          expect(el.scope().$select.resolved[1]).toBe(true);
+          done();
+        })
+        return defer.promise;
+      }
+
+      scope.peopleCopy = [];
+      var selected = [
+        {email: scope.people[2].email}, 
+        {email: scope.people[4].email},
+      ];
+      scope.selection.selected = selected;
+      scope.$digest();
+      expect(el.scope().$select.selected[0]).toBe(selected[0]);
+      expect(el.scope().$select.selected[1]).toBe(selected[1]);
+      expect(el.scope().$select.resolved[0]).not.toBe(true);
+      expect(el.scope().$select.resolved[1]).not.toBe(true);
+      $timeout.flush();
+    });
+  });
 });
