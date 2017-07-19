@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.19.8 - 2017-07-06T16:21:42.253Z
+ * Version: 0.19.8 - 2017-07-19T11:23:04.320Z
  * License: MIT
  */
 
@@ -314,7 +314,6 @@ uis.controller('uiSelectCtrl',
   ctrl.disabled = false;
   ctrl.selected = undefined;
   ctrl.resolved = undefined; //True if the selected value has been resolved against the choices
-  ctrl.nextResolved = undefined; //The value of resolved at the next $render call
 
   ctrl.dropdownPosition = 'auto';
 
@@ -1732,56 +1731,65 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         return resultMultiple;
       });
 
+      // compute the keys of a model value, to match against the items
+      var keyOfModel = function(model){
+        var locals = {};
+        locals[$select.parserResult.itemName] = model;
+        return {
+          model: model,
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+          modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
+        };
+      };
+
+      // compute the keys of an item, to match against the model value
+      var keyOfItem = function(item){
+        var locals = {};
+        locals[$select.parserResult.itemName] = item;
+        return {
+          item: item,
+          model: $select.parserResult.modelMapper(scope, locals),
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+        };
+      };
+
+      // compare the keys of the value and the item
+      var valueMatchItem = function(value, item){
+        // check the following cases:
+        // * value is equals to item (formatted as a choice)
+        // * value is equals to item (formatted as a model)
+        // * the "track by" ids of value (formatted as a choice) and item are the same
+        // * the "track by" ids of value (formatted as a model) and item are the same
+        if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+        if($select.parserResult.trackByMapper){
+          if(value.trackBy === item.trackBy) return true;
+          if($select.parserResult.modelToTrackByMapper){
+            if(value.modelTotrackBy === item.trackBy) return true;
+          }
+        }
+        return false;
+      };
+
+      var nextResolved; //= undefined;
       // From model --> view
       ngModel.$formatters.unshift(function (inputValue) {
-        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
-            locals = {},
-            result;
         var resultMultiple = [], resolved = [];
-        $select.nextResolved = resolved; // resolved for the next $render call
+        nextResolved = resolved; // resolved for the next $render call
         setTimeout(function(){
-          $select.nextResolved = undefined;
+          nextResolved = undefined;
         });
         if (!inputValue) return resultMultiple; //If ngModel was undefined
-        // compute the keys of an item, to match against the value
-        var keyOfItem = function(item){
-          locals[$select.parserResult.itemName] = item;
-          return {
-            item: item,
-            model: $select.parserResult.modelMapper(scope, locals),
-            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
-          };
-        };
-        // compare the keys of the value and the item
-        var valueMatchItem = function(value, item){
-          // check the following cases:
-          // * value is equals to item (formatted as a choice)
-          // * value is equals to item (formatted as a model)
-          // * the "track by" ids of value (formatted as a choice) and item are the same
-          // * the "track by" ids of value (formatted as a model) and item are the same
-          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
-          if($select.parserResult.trackByMapper){
-            if(value.trackBy === item.trackBy) return true;
-            if($select.parserResult.modelToTrackByMapper){
-              if(value.modelTotrackBy === item.trackBy) return true;
-            }
-          }
-          return false;
-        };
+
         // the list of resolved selected items with their keys
         var selected = $select.selected.filter(function(item, index){
           return $select.resolved[index];
         }).map(keyOfItem);
+        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}); //Overwrite $search
         // the list of choices with their keys, computed at the last moment
         var search = data ? null : [];
-        for (var k = 0, i; k < inputValue.length; k++) {
+        for (var k = 0; k < inputValue.length; k++) {
           // the keys of the value, to match against the items
-          locals[$select.parserResult.itemName] = inputValue[k];
-          var value = {
-            model: inputValue[k],
-            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
-            modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
-          };
+          var i, value = keyOfModel(inputValue[k]);
           //Check model array of currently selected items
           for(i = selected.length - 1; i >= 0; i--){
             if(valueMatchItem(value, selected[i])){
@@ -1810,6 +1818,26 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         return resultMultiple;
       });
 
+      // // perform a new resolving when the choices change. It does not seem to be necessary
+      // scope.$on('uis:refresh', function (event) {
+      //   if(!$select.items.length || $select.resolved.every(function(resolved){return resolved;})) return;
+      //   var updated = false;
+      //   var search = $select.items.map(keyOfItem);
+      //   for (var k = 0, i; k < $select.selected.length; k++) {
+      //     if($select.resolved[k]) continue;
+      //     var value = keyOfModel($select.selected[k]);
+      //     for(i = search.length - 1; i >= 0; i--){
+      //       if(valueMatchItem(value, search[i])){
+      //         $select.selected[k] = search[i].item;
+      //         $select.resolved[k] = true;
+      //         updated = true;
+      //         break;
+      //       }
+      //     }
+      //   }
+      //   if(updated) $selectMultiple.refreshComponent();
+      // });
+
       //Watch for external model changes
       scope.$watchCollection(function(){ return ngModel.$modelValue; }, function(newValue, oldValue) {
         if (oldValue != newValue){
@@ -1832,9 +1860,9 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           }
         }
         $select.selected = ngModel.$viewValue;
-        if($select.nextResolved){
-          $select.resolved = $select.nextResolved;
-          $select.nextResolved = undefined;
+        if(nextResolved){
+          $select.resolved = nextResolved;
+          nextResolved = undefined;
         }else{
           $select.resolved = [];
           $select.resolved.length = ngModel.$viewValue.length;
@@ -1847,11 +1875,33 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         if($select.selected.length >= $select.limit) {
           return;
         }
+        var resolved = false;
+        // Check if the item is one of the selected items
+        if($select.selected.some(function(selected){
+          return angular.equals(selected, item);
+        })) return;
+        // Check if the item comes from the choices
+        else if($select.items.indexOf(item) > -1) resolved = true;
+        else{
+          var value = keyOfModel(item);
+          // Check if the item matches one of the resolved selected items
+          if($select.selected.some(function(selected, index){
+            return $select.resolved[index] && valueMatchItem(value, keyOfItem(selected));
+          })) return;
+          // Check if the item matches one of the choices
+          for(var i = $select.items.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, keyOfItem($select.items[i]))){
+              item = $select.items[i];
+              resolved = true;
+              break;
+            }
+          }
+        }
         $select.selected.push(item);
-        $select.resolved.push(true);
+        $select.resolved.push(resolved);
+
         var locals = {};
         locals[$select.parserResult.itemName] = item;
-
         $timeout(function(){
           $select.onSelectCallback(scope, {
             $item: item,
@@ -2158,74 +2208,83 @@ uis.directive('uiSelectSingle', ['$timeout','$compile', function($timeout, $comp
       var ngModel = ctrls[1];
 
       //From view --> model
-      ngModel.$parsers.unshift(function (inputValue) {
+      ngModel.$parsers.unshift(function () {
         // Keep original value for undefined and null
-        if (isNil(inputValue)) {
-          return inputValue;
+        if (isNil($select.selected)) {
+          return $select.selected;
         }
 
         var locals = {},
             result;
-        locals[$select.parserResult.itemName] = inputValue;
+        locals[$select.parserResult.itemName] = $select.selected;
         result = $select.parserResult.modelMapper(scope, locals);
         return result;
       });
 
-      //From model --> view
-      ngModel.$formatters.unshift(function (inputValue) {
-        $select.nextResolved = false; // resolved for the next $render call
-        setTimeout(function(){
-          $select.nextResolved = undefined;
-        });
-        // Keep original value for undefined and null
-        if (isNil(inputValue)) {
-          return inputValue;
-        }
-
-        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
-            locals = {};
-        // compute the keys of an item, to match against the value
-        var keyOfItem = function(item){
-          locals[$select.parserResult.itemName] = item;
-          return {
-            item: item,
-            model: $select.parserResult.modelMapper(scope, locals),
-            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
-          };
-        };
-        // compare the keys of the value and the item
-        var valueMatchItem = function(value, item){
-          // check the following cases:
-          // * value is equals to item (formatted as a choice)
-          // * value is equals to item (formatted as a model)
-          // * the "track by" ids of value (formatted as a choice) and item are the same
-          // * the "track by" ids of value (formatted as a model) and item are the same
-          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
-          if($select.parserResult.trackByMapper){
-            if(value.trackBy === item.trackBy) return true;
-            if($select.parserResult.modelToTrackByMapper){
-              if(value.modelTotrackBy === item.trackBy) return true;
-            }
-          }
-          return false;
-        };
-        locals[$select.parserResult.itemName] = inputValue;
-        // the keys of the value, to match against the items
-        var value = {
-          model: inputValue,
+      // compute the keys of a model value, to match against the items
+      var keyOfModel = function(model){
+        var locals = {};
+        locals[$select.parserResult.itemName] = model;
+        return {
+          model: model,
           trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
           modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
         };
+      };
+
+      // compute the keys of an item, to match against the model value
+      var keyOfItem = function(item){
+        var locals = {};
+        locals[$select.parserResult.itemName] = item;
+        return {
+          item: item,
+          model: $select.parserResult.modelMapper(scope, locals),
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+        };
+      };
+
+      // compare the keys of the model and the item
+      var valueMatchItem = function(value, item){
+        // check the following cases:
+        // * value is equals to item (formatted as a choice)
+        // * value is equals to item (formatted as a model)
+        // * the "track by" ids of value (formatted as a choice) and item are the same
+        // * the "track by" ids of value (formatted as a model) and item are the same
+        if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+        if($select.parserResult.trackByMapper){
+          if(value.trackBy === item.trackBy) return true;
+          if($select.parserResult.modelToTrackByMapper){
+            if(value.modelTotrackBy === item.trackBy) return true;
+          }
+        }
+        return false;
+      };
+
+      var nextResolved; //= undefined;
+      //From model --> view
+      ngModel.$formatters.unshift(function (inputValue) {
+        nextResolved = false; // resolved for the next $render call
+        setTimeout(function(){
+          nextResolved = undefined;
+        });
+        // Keep original value for undefined and null
+        if (isNil(inputValue)) {
+          nextResolved = true;
+          return inputValue;
+        }
+
+        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}); //Overwrite $search
+        var value = keyOfModel(inputValue);
         //If possible pass same object stored in $select.selected
-        if($select.selected && $select.resolved && valueMatchItem(value, keyOfItem($select.selected))){
-          $select.nextResolved = true;
+        if(!isNil($select.selected) && $select.resolved && valueMatchItem(value, keyOfItem($select.selected))){
+          nextResolved = true;
           return $select.selected;
         }
         //Check model array of all items available
         if(data){
           for(var i = data.length - 1; i >= 0; i--){
             if(valueMatchItem(value, keyOfItem(data[i]))){
-              $select.nextResolved = true;
+              nextResolved = true;
               return data[i];
             }
           }
@@ -2233,25 +2292,60 @@ uis.directive('uiSelectSingle', ['$timeout','$compile', function($timeout, $comp
         return inputValue;
       });
 
-      //Update viewValue if model change
+      // // perform a new resolving when the choices change. It does not seem to be necessary
+      // scope.$on('uis:refresh', function (event) {
+      //   if(!$select.items.length || $select.resolved) return;
+      //   var search = $select.items.map(keyOfItem);
+      //   var value = keyOfModel($select.selected);
+      //   for(var i = search.length - 1; i >= 0; i--){
+      //     if(valueMatchItem(value, search[i])){
+      //       $select.selected = search[i].item;
+      //       $select.resolved = true;
+      //       break;
+      //     }
+      //   }
+      // });
+
+      // Update viewValue if model change
       scope.$watch('$select.selected', function(newValue) {
         if (ngModel.$viewValue !== newValue) {
-          ngModel.$setViewValue(newValue);
+          ngModel.$setViewValue(Date.now());
         }
       });
 
       ngModel.$render = function() {
         $select.selected = ngModel.$viewValue;
-        $select.resolved = $select.nextResolved || false;
-        $select.nextResolved = undefined;
+        $select.resolved = nextResolved || false;
+        nextResolved = undefined;
       };
 
       scope.$on('uis:select', function (event, item) {
+        // Check if the item is null
+        if(isNil(item)) $select.resolved = true;
+        // Check if the item is the same as the selected
+        else if(angular.equals($select.selected, item));
+        // Check if the item comes from the choices
+        else if($select.items.indexOf(item) > -1) $select.resolved = true;
+        else{
+          var value = keyOfModel(item);
+          // Check if the item matches the resolved selected item
+          if(!isNil($select.selected) && $select.resolved && valueMatchItem(value, keyOfItem($select.selected))){
+            item = $select.selected;
+          // Check if the item is not present in the choices
+          }else{
+            $select.resolved = false;
+            for(var i = $select.items.length - 1; i >= 0; i--){
+              if(valueMatchItem(value, keyOfItem($select.items[i]))){
+                item = $select.items[i];
+                $select.resolved = true;
+              }
+            }
+          }
+        }
         $select.selected = item;
-        $select.resolved = true;
+
         var locals = {};
         locals[$select.parserResult.itemName] = item;
-
         $timeout(function() {
           $select.onSelectCallback(scope, {
             $item: item,
@@ -2706,15 +2800,15 @@ $templateCache.put("bootstrap/match.tpl.html","<div class=\"ui-select-match\" ng
 $templateCache.put("bootstrap/no-choice.tpl.html","<ul class=\"ui-select-no-choice dropdown-menu\" ng-show=\"$select.items.length == 0\"><li ng-transclude=\"\"></li></ul>");
 $templateCache.put("bootstrap/select-multiple.tpl.html","<div class=\"ui-select-container ui-select-multiple ui-select-bootstrap dropdown form-control\" ng-class=\"{open: $select.open}\"><div><div class=\"ui-select-match\"></div><span ng-show=\"$select.open && $select.refreshing && $select.spinnerEnabled\" class=\"ui-select-refreshing {{$select.spinnerClass}}\"></span> <input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" class=\"ui-select-search input-xs\" placeholder=\"{{$selectMultiple.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-click=\"$select.activate()\" ng-model=\"$select.search\" role=\"combobox\" aria-expanded=\"{{$select.open}}\" aria-label=\"{{$select.baseTitle}}\" ng-class=\"{\'spinner\': $select.refreshing}\" ondrop=\"return false;\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
 $templateCache.put("bootstrap/select.tpl.html","<div class=\"ui-select-container ui-select-bootstrap dropdown\" ng-class=\"{open: $select.open}\"><div class=\"ui-select-match\"></div><span ng-show=\"$select.open && $select.refreshing && $select.spinnerEnabled\" class=\"ui-select-refreshing {{$select.spinnerClass}}\"></span> <input type=\"search\" autocomplete=\"off\" tabindex=\"-1\" aria-expanded=\"true\" aria-label=\"{{ $select.baseTitle }}\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" class=\"form-control ui-select-search\" ng-class=\"{ \'ui-select-search-hidden\' : !$select.searchEnabled }\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-show=\"$select.open\"><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
-$templateCache.put("select2/choices.tpl.html","<ul tabindex=\"-1\" class=\"ui-select-choices ui-select-choices-content select2-results\"><li class=\"ui-select-choices-group\" ng-class=\"{\'select2-result-with-children\': $select.choiceGrouped($group) }\"><div ng-show=\"$select.choiceGrouped($group)\" class=\"ui-select-choices-group-label select2-result-label\" ng-bind=\"$group.name\"></div><ul id=\"ui-select-choices-{{ $select.generatedId }}\" ng-class=\"{\'select2-result-sub\': $select.choiceGrouped($group), \'select2-result-single\': !$select.choiceGrouped($group) }\"><li role=\"option\" ng-attr-id=\"ui-select-choices-row-{{ $select.generatedId }}-{{$index}}\" class=\"ui-select-choices-row\" ng-class=\"$select.choiceClass(this, {\'select2-highlighted\': $select.isActive(this), \'select2-disabled\': $select.isDisabled(this)})\" ng-style=\"$select.choiceStyle(this)\"><div class=\"select2-result-label ui-select-choices-row-inner\"></div></li></ul></li></ul>");
-$templateCache.put("select2/match-multiple.tpl.html","<span class=\"ui-select-match\"><li class=\"ui-select-match-item select2-search-choice\" ng-repeat=\"$item in $select.selected track by $index\" ng-class=\"$select.matchClass(this, $index, {\'select2-search-choice-focus\':$selectMultiple.activeMatchIndex === $index, \'select2-locked\':$select.isLocked(this, $index)})\" ng-style=\"$select.matchStyle(this, $index)\" ui-select-sort=\"$select.selected\"><span uis-transclude-append=\"\"></span> <a href=\"javascript:;\" class=\"ui-select-match-close select2-search-choice-close\" ng-click=\"$selectMultiple.removeChoice($index)\" tabindex=\"-1\"></a></li></span>");
-$templateCache.put("select2/match.tpl.html","<a class=\"select2-choice ui-select-match\" ng-class=\"$select.matchClass(this, null, {\'select2-default\': $select.isEmpty()})\" ng-style=\"$select.matchStyle(this)\" ng-click=\"$select.toggle($event)\" aria-label=\"{{ $select.baseTitle }} select\"><span ng-show=\"$select.isEmpty()\" class=\"select2-chosen\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"select2-chosen\" ng-transclude=\"\"></span> <abbr ng-if=\"$select.allowClear && !$select.isEmpty()\" class=\"select2-search-choice-close\" ng-click=\"$select.clear($event)\"></abbr> <span class=\"select2-arrow ui-select-toggle\"><b></b></span></a>");
-$templateCache.put("select2/no-choice.tpl.html","<div class=\"ui-select-no-choice dropdown\" ng-show=\"$select.items.length == 0\"><div class=\"dropdown-content\"><div data-selectable=\"\" ng-transclude=\"\"></div></div></div>");
-$templateCache.put("select2/select-multiple.tpl.html","<div class=\"ui-select-container ui-select-multiple select2 select2-container select2-container-multi\" ng-class=\"{\'select2-container-active select2-dropdown-open open\': $select.open, \'select2-container-disabled\': $select.disabled}\"><ul class=\"select2-choices\"><span class=\"ui-select-match\"></span><li class=\"select2-search-field\"><input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" role=\"combobox\" aria-expanded=\"true\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" aria-label=\"{{ $select.baseTitle }}\" aria-activedescendant=\"ui-select-choices-row-{{ $select.generatedId }}-{{ $select.activeIndex }}\" class=\"select2-input ui-select-search\" placeholder=\"{{$selectMultiple.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-hide=\"$select.disabled\" ng-model=\"$select.search\" ng-click=\"$select.activate()\" style=\"width: 34px;\" ondrop=\"return false;\"></li></ul><div class=\"ui-select-dropdown select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open || $select.items.length === 0}\"><div class=\"ui-select-choices\"></div></div></div>");
-$templateCache.put("select2/select.tpl.html","<div class=\"ui-select-container select2 select2-container\" ng-class=\"{\'select2-container-active select2-dropdown-open open\': $select.open, \'select2-container-disabled\': $select.disabled, \'select2-container-active\': $select.focus, \'select2-allowclear\': $select.allowClear && !$select.isEmpty()}\"><div class=\"ui-select-match\"></div><div class=\"ui-select-dropdown select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open}\"><div class=\"search-container\" ng-class=\"{\'ui-select-search-hidden\':!$select.searchEnabled, \'select2-search\':$select.searchEnabled}\"><input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" ng-class=\"{\'select2-active\': $select.refreshing}\" role=\"combobox\" aria-expanded=\"true\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" aria-label=\"{{ $select.baseTitle }}\" class=\"ui-select-search select2-input\" ng-model=\"$select.search\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div></div>");
 $templateCache.put("selectize/choices.tpl.html","<div ng-show=\"$select.open\" class=\"ui-select-choices ui-select-dropdown selectize-dropdown\" ng-class=\"{\'single\': !$select.multiple, \'multi\': $select.multiple}\"><div class=\"ui-select-choices-content selectize-dropdown-content\"><div class=\"ui-select-choices-group optgroup\"><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label optgroup-header\" ng-bind=\"$group.name\"></div><div role=\"option\" class=\"ui-select-choices-row\" ng-class=\"$select.choiceClass(this, {active: $select.isActive(this), disabled: $select.isDisabled(this)})\" ng-style=\"$select.choiceStyle(this)\"><div class=\"option ui-select-choices-row-inner\" data-selectable=\"\"></div></div></div></div></div>");
 $templateCache.put("selectize/match-multiple.tpl.html","<div class=\"ui-select-match\" data-value=\"\" ng-repeat=\"$item in $select.selected track by $index\" ng-click=\"$selectMultiple.activeMatchIndex = $index;\" ng-class=\"$select.matchClass(this, $index, {\'active\':$selectMultiple.activeMatchIndex === $index})\" ng-style=\"$select.matchStyle(this, $index)\" ui-select-sort=\"$select.selected\"><span class=\"ui-select-match-item\" ng-class=\"{\'select-locked\':$select.isLocked(this, $index)}\"><span uis-transclude-append=\"\"></span> <span class=\"remove ui-select-match-close\" ng-hide=\"$select.disabled\" ng-click=\"$selectMultiple.removeChoice($index)\">&times;</span></span></div>");
 $templateCache.put("selectize/match.tpl.html","<div ng-hide=\"$select.searchEnabled && ($select.open || $select.isEmpty())\" class=\"ui-select-match\"><span ng-show=\"!$select.searchEnabled && ($select.isEmpty() || $select.open)\" class=\"ui-select-placeholder text-muted\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty() || $select.open\" ng-transclude=\"\"></span></div>");
 $templateCache.put("selectize/no-choice.tpl.html","<div class=\"ui-select-no-choice selectize-dropdown\" ng-show=\"$select.items.length == 0\"><div class=\"selectize-dropdown-content\"><div data-selectable=\"\" ng-transclude=\"\"></div></div></div>");
 $templateCache.put("selectize/select-multiple.tpl.html","<div class=\"ui-select-container selectize-control multi plugin-remove_button\" ng-class=\"{\'open\': $select.open}\"><div class=\"selectize-input\" ng-class=\"{\'focus\': $select.open, \'disabled\': $select.disabled, \'selectize-focus\' : $select.focus}\" ng-click=\"$select.open && !$select.searchEnabled ? $select.toggle($event) : $select.activate()\"><div class=\"ui-select-match\"></div><input type=\"search\" autocomplete=\"off\" tabindex=\"-1\" class=\"ui-select-search\" ng-class=\"{\'ui-select-search-hidden\':!$select.searchEnabled}\" placeholder=\"{{$selectMultiple.getPlaceholder()}}\" ng-model=\"$select.search\" ng-disabled=\"$select.disabled\" aria-expanded=\"{{$select.open}}\" aria-label=\"{{ $select.baseTitle }}\" ondrop=\"return false;\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
-$templateCache.put("selectize/select.tpl.html","<div class=\"ui-select-container selectize-control single\" ng-class=\"{\'open\': $select.open}\"><div class=\"selectize-input\" ng-class=\"{\'focus\': $select.open, \'disabled\': $select.disabled, \'selectize-focus\' : $select.focus}\" ng-click=\"$select.open && !$select.searchEnabled ? $select.toggle($event) : $select.activate()\"><div class=\"ui-select-match\"></div><input type=\"search\" autocomplete=\"off\" tabindex=\"-1\" class=\"ui-select-search ui-select-toggle\" ng-class=\"{\'ui-select-search-hidden\':!$select.searchEnabled}\" ng-click=\"$select.toggle($event)\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-hide=\"!$select.isEmpty() && !$select.open\" ng-disabled=\"$select.disabled\" aria-label=\"{{ $select.baseTitle }}\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");}]);
+$templateCache.put("selectize/select.tpl.html","<div class=\"ui-select-container selectize-control single\" ng-class=\"{\'open\': $select.open}\"><div class=\"selectize-input\" ng-class=\"{\'focus\': $select.open, \'disabled\': $select.disabled, \'selectize-focus\' : $select.focus}\" ng-click=\"$select.open && !$select.searchEnabled ? $select.toggle($event) : $select.activate()\"><div class=\"ui-select-match\"></div><input type=\"search\" autocomplete=\"off\" tabindex=\"-1\" class=\"ui-select-search ui-select-toggle\" ng-class=\"{\'ui-select-search-hidden\':!$select.searchEnabled}\" ng-click=\"$select.toggle($event)\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-hide=\"!$select.isEmpty() && !$select.open\" ng-disabled=\"$select.disabled\" aria-label=\"{{ $select.baseTitle }}\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div>");
+$templateCache.put("select2/choices.tpl.html","<ul tabindex=\"-1\" class=\"ui-select-choices ui-select-choices-content select2-results\"><li class=\"ui-select-choices-group\" ng-class=\"{\'select2-result-with-children\': $select.choiceGrouped($group) }\"><div ng-show=\"$select.choiceGrouped($group)\" class=\"ui-select-choices-group-label select2-result-label\" ng-bind=\"$group.name\"></div><ul id=\"ui-select-choices-{{ $select.generatedId }}\" ng-class=\"{\'select2-result-sub\': $select.choiceGrouped($group), \'select2-result-single\': !$select.choiceGrouped($group) }\"><li role=\"option\" ng-attr-id=\"ui-select-choices-row-{{ $select.generatedId }}-{{$index}}\" class=\"ui-select-choices-row\" ng-class=\"$select.choiceClass(this, {\'select2-highlighted\': $select.isActive(this), \'select2-disabled\': $select.isDisabled(this)})\" ng-style=\"$select.choiceStyle(this)\"><div class=\"select2-result-label ui-select-choices-row-inner\"></div></li></ul></li></ul>");
+$templateCache.put("select2/match-multiple.tpl.html","<span class=\"ui-select-match\"><li class=\"ui-select-match-item select2-search-choice\" ng-repeat=\"$item in $select.selected track by $index\" ng-class=\"$select.matchClass(this, $index, {\'select2-search-choice-focus\':$selectMultiple.activeMatchIndex === $index, \'select2-locked\':$select.isLocked(this, $index)})\" ng-style=\"$select.matchStyle(this, $index)\" ui-select-sort=\"$select.selected\"><span uis-transclude-append=\"\"></span> <a href=\"javascript:;\" class=\"ui-select-match-close select2-search-choice-close\" ng-click=\"$selectMultiple.removeChoice($index)\" tabindex=\"-1\"></a></li></span>");
+$templateCache.put("select2/match.tpl.html","<a class=\"select2-choice ui-select-match\" ng-class=\"$select.matchClass(this, null, {\'select2-default\': $select.isEmpty()})\" ng-style=\"$select.matchStyle(this)\" ng-click=\"$select.toggle($event)\" aria-label=\"{{ $select.baseTitle }} select\"><span ng-show=\"$select.isEmpty()\" class=\"select2-chosen\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"select2-chosen\" ng-transclude=\"\"></span> <abbr ng-if=\"$select.allowClear && !$select.isEmpty()\" class=\"select2-search-choice-close\" ng-click=\"$select.clear($event)\"></abbr> <span class=\"select2-arrow ui-select-toggle\"><b></b></span></a>");
+$templateCache.put("select2/no-choice.tpl.html","<div class=\"ui-select-no-choice dropdown\" ng-show=\"$select.items.length == 0\"><div class=\"dropdown-content\"><div data-selectable=\"\" ng-transclude=\"\"></div></div></div>");
+$templateCache.put("select2/select-multiple.tpl.html","<div class=\"ui-select-container ui-select-multiple select2 select2-container select2-container-multi\" ng-class=\"{\'select2-container-active select2-dropdown-open open\': $select.open, \'select2-container-disabled\': $select.disabled}\"><ul class=\"select2-choices\"><span class=\"ui-select-match\"></span><li class=\"select2-search-field\"><input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" role=\"combobox\" aria-expanded=\"true\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" aria-label=\"{{ $select.baseTitle }}\" aria-activedescendant=\"ui-select-choices-row-{{ $select.generatedId }}-{{ $select.activeIndex }}\" class=\"select2-input ui-select-search\" placeholder=\"{{$selectMultiple.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-hide=\"$select.disabled\" ng-model=\"$select.search\" ng-click=\"$select.activate()\" style=\"width: 34px;\" ondrop=\"return false;\"></li></ul><div class=\"ui-select-dropdown select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open || $select.items.length === 0}\"><div class=\"ui-select-choices\"></div></div></div>");
+$templateCache.put("select2/select.tpl.html","<div class=\"ui-select-container select2 select2-container\" ng-class=\"{\'select2-container-active select2-dropdown-open open\': $select.open, \'select2-container-disabled\': $select.disabled, \'select2-container-active\': $select.focus, \'select2-allowclear\': $select.allowClear && !$select.isEmpty()}\"><div class=\"ui-select-match\"></div><div class=\"ui-select-dropdown select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open}\"><div class=\"search-container\" ng-class=\"{\'ui-select-search-hidden\':!$select.searchEnabled, \'select2-search\':$select.searchEnabled}\"><input type=\"search\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" ng-class=\"{\'select2-active\': $select.refreshing}\" role=\"combobox\" aria-expanded=\"true\" aria-owns=\"ui-select-choices-{{ $select.generatedId }}\" aria-label=\"{{ $select.baseTitle }}\" class=\"ui-select-search select2-input\" ng-model=\"$select.search\"></div><div class=\"ui-select-choices\"></div><div class=\"ui-select-no-choice\"></div></div></div>");}]);
