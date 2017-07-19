@@ -107,56 +107,65 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         return resultMultiple;
       });
 
+      // compute the keys of a model value, to match against the items
+      var keyOfModel = function(model){
+        var locals = {};
+        locals[$select.parserResult.itemName] = model;
+        return {
+          model: model,
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+          modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
+        };
+      };
+
+      // compute the keys of an item, to match against the model value
+      var keyOfItem = function(item){
+        var locals = {};
+        locals[$select.parserResult.itemName] = item;
+        return {
+          item: item,
+          model: $select.parserResult.modelMapper(scope, locals),
+          trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
+        };
+      };
+
+      // compare the keys of the value and the item
+      var valueMatchItem = function(value, item){
+        // check the following cases:
+        // * value is equals to item (formatted as a choice)
+        // * value is equals to item (formatted as a model)
+        // * the "track by" ids of value (formatted as a choice) and item are the same
+        // * the "track by" ids of value (formatted as a model) and item are the same
+        if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
+        if($select.parserResult.trackByMapper){
+          if(value.trackBy === item.trackBy) return true;
+          if($select.parserResult.modelToTrackByMapper){
+            if(value.modelTotrackBy === item.trackBy) return true;
+          }
+        }
+        return false;
+      };
+
+      var nextResolved; //= undefined;
       // From model --> view
       ngModel.$formatters.unshift(function (inputValue) {
-        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search
-            locals = {},
-            result;
         var resultMultiple = [], resolved = [];
-        $select.nextResolved = resolved; // resolved for the next $render call
+        nextResolved = resolved; // resolved for the next $render call
         setTimeout(function(){
-          $select.nextResolved = undefined;
+          nextResolved = undefined;
         });
         if (!inputValue) return resultMultiple; //If ngModel was undefined
-        // compute the keys of an item, to match against the value
-        var keyOfItem = function(item){
-          locals[$select.parserResult.itemName] = item;
-          return {
-            item: item,
-            model: $select.parserResult.modelMapper(scope, locals),
-            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
-          };
-        };
-        // compare the keys of the value and the item
-        var valueMatchItem = function(value, item){
-          // check the following cases:
-          // * value is equals to item (formatted as a choice)
-          // * value is equals to item (formatted as a model)
-          // * the "track by" ids of value (formatted as a choice) and item are the same
-          // * the "track by" ids of value (formatted as a model) and item are the same
-          if(angular.equals(value.model, item.model) || angular.equals(value.model, item.item)) return true;
-          if($select.parserResult.trackByMapper){
-            if(value.trackBy === item.trackBy) return true;
-            if($select.parserResult.modelToTrackByMapper){
-              if(value.modelTotrackBy === item.trackBy) return true;
-            }
-          }
-          return false;
-        };
+
         // the list of resolved selected items with their keys
         var selected = $select.selected.filter(function(item, index){
           return $select.resolved[index];
         }).map(keyOfItem);
+        var data = $select.parserResult && $select.parserResult.source (scope, { $select : {search:''}}); //Overwrite $search
         // the list of choices with their keys, computed at the last moment
         var search = data ? null : [];
-        for (var k = 0, i; k < inputValue.length; k++) {
+        for (var k = 0; k < inputValue.length; k++) {
           // the keys of the value, to match against the items
-          locals[$select.parserResult.itemName] = inputValue[k];
-          var value = {
-            model: inputValue[k],
-            trackBy: $select.parserResult.trackByMapper && $select.parserResult.trackByMapper(scope, locals),
-            modelTotrackBy: $select.parserResult.modelToTrackByMapper && $select.parserResult.modelToTrackByMapper(scope, locals),
-          };
+          var i, value = keyOfModel(inputValue[k]);
           //Check model array of currently selected items
           for(i = selected.length - 1; i >= 0; i--){
             if(valueMatchItem(value, selected[i])){
@@ -185,6 +194,26 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         return resultMultiple;
       });
 
+      // // perform a new resolving when the choices change. It does not seem to be necessary
+      // scope.$on('uis:refresh', function (event) {
+      //   if(!$select.items.length || $select.resolved.every(function(resolved){return resolved;})) return;
+      //   var updated = false;
+      //   var search = $select.items.map(keyOfItem);
+      //   for (var k = 0, i; k < $select.selected.length; k++) {
+      //     if($select.resolved[k]) continue;
+      //     var value = keyOfModel($select.selected[k]);
+      //     for(i = search.length - 1; i >= 0; i--){
+      //       if(valueMatchItem(value, search[i])){
+      //         $select.selected[k] = search[i].item;
+      //         $select.resolved[k] = true;
+      //         updated = true;
+      //         break;
+      //       }
+      //     }
+      //   }
+      //   if(updated) $selectMultiple.refreshComponent();
+      // });
+
       //Watch for external model changes
       scope.$watchCollection(function(){ return ngModel.$modelValue; }, function(newValue, oldValue) {
         if (oldValue != newValue){
@@ -207,9 +236,9 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
           }
         }
         $select.selected = ngModel.$viewValue;
-        if($select.nextResolved){
-          $select.resolved = $select.nextResolved;
-          $select.nextResolved = undefined;
+        if(nextResolved){
+          $select.resolved = nextResolved;
+          nextResolved = undefined;
         }else{
           $select.resolved = [];
           $select.resolved.length = ngModel.$viewValue.length;
@@ -222,11 +251,33 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
         if($select.selected.length >= $select.limit) {
           return;
         }
+        var resolved = false;
+        // Check if the item is one of the selected items
+        if($select.selected.some(function(selected){
+          return angular.equals(selected, item);
+        })) return;
+        // Check if the item comes from the choices
+        else if($select.items.indexOf(item) > -1) resolved = true;
+        else{
+          var value = keyOfModel(item);
+          // Check if the item matches one of the resolved selected items
+          if($select.selected.some(function(selected, index){
+            return $select.resolved[index] && valueMatchItem(value, keyOfItem(selected));
+          })) return;
+          // Check if the item matches one of the choices
+          for(var i = $select.items.length - 1; i >= 0; i--){
+            if(valueMatchItem(value, keyOfItem($select.items[i]))){
+              item = $select.items[i];
+              resolved = true;
+              break;
+            }
+          }
+        }
         $select.selected.push(item);
-        $select.resolved.push(true);
+        $select.resolved.push(resolved);
+
         var locals = {};
         locals[$select.parserResult.itemName] = item;
-
         $timeout(function(){
           $select.onSelectCallback(scope, {
             $item: item,
