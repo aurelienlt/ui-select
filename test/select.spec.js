@@ -3876,5 +3876,96 @@ describe('ui-select tests', function () {
       expect(el.scope().$select.resolved[1]).not.toBe(true);
       $timeout.flush();
     });
+
+    it('should recognize the resolving of new item signle case', function(){
+      var el = compileTemplate(
+        '<ui-select ng-model="selection.selected"> \
+          <ui-select-match>{{$select.selected.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.peopleCopy = scope.people.slice();
+      scope.selection.selected = null;
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(null);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      el.scope().$select.select({email: scope.people[2].email})
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[2]);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      scope.peopleCopy.splice(2, 1);
+      scope.$digest();
+      el.scope().$select.select({email: scope.people[2].email})
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(scope.people[2]);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      var copy = angular.copy(scope.people[2])
+      el.scope().$select.select(copy)
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(copy);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      el.scope().$select.select(null)
+      scope.$digest();
+      expect(el.scope().$select.selected).toBe(null);
+      expect(el.scope().$select.resolved).toBe(true);
+
+      el.scope().$select.select({email: scope.people[2].email})
+      scope.$digest();
+      expect(el.scope().$select.selected.email).toBe(scope.people[2].email);
+      expect(el.scope().$select.resolved).toBe(false);
+    });
+
+    it('should recognize the resolving of new item multiple case', function(){
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selected"> \
+          <ui-select-match>{{$item.name}}</ui-select-match> \
+          <ui-select-choices repeat="person in peopleCopy track by person.email" \
+              refresh="searchPeople()" refresh-delay="0"> \
+            <div ng-bind-html="person.name"></div> \
+            <div ng-bind-html="person.email"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      scope.peopleCopy = scope.people.slice();
+      scope.selection.selected = [
+        {email: scope.people[2].email}, 
+        {email: scope.people[4].email},
+      ];
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+
+      scope.peopleCopy.splice(2, 2);
+      scope.$digest();
+      el.scope().$select.select({email: scope.people[2].email})
+      el.scope().$select.select(scope.people[4])
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.scope().$select.selected[0]).toBe(scope.people[2]);
+      expect(el.scope().$select.selected[1]).toBe(scope.people[4]);
+      expect(el.scope().$select.resolved[0]).toBe(true);
+      expect(el.scope().$select.resolved[1]).toBe(true);
+
+      el.scope().$select.select({email: scope.people[1].email})
+      el.scope().$select.select(scope.people[3])
+      scope.$digest();
+      expect(el.scope().$select.selected.length).toBe(4);
+      expect(el.scope().$select.selected[2]).toBe(scope.people[1]);
+      expect(el.scope().$select.selected[3]).toBe(scope.people[3]);
+      expect(el.scope().$select.resolved[2]).toBe(true);
+      expect(el.scope().$select.resolved[3]).toBe(false);
+    });
   });
 });
