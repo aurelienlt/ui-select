@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.19.8 - 2017-07-19T11:23:04.320Z
+ * Version: 0.19.8 - 2017-07-19T13:06:29.895Z
  * License: MIT
  */
 
@@ -1955,7 +1955,7 @@ uis.directive('uiSelectMultiple', ['uiSelectMinErr','$timeout', function(uiSelec
 
         if(caretPosition > 0 || ($select.search.length && key == KEY.RIGHT)) return false;
 
-        $select.close();
+        $select.close(undefined, true);
 
         function getNewActiveMatchIndex(){
           switch(key){
